@@ -116,6 +116,28 @@ end #OB-JULIA-VTERM_END\n"))
    (if (member "pp" (cdr (assq :result-params params))) "true" "false")
    (if (member "nolimit" (cdr (assq :result-params params))) "true" "false")))
 
+(defun org-babel-expand-body:julia-vterm (body params &optional var-lines)
+  "Expand BODY with PARAMS.
+Expand a block of code with org-babel according to its header
+arguments.  This generic implementation of body expansion is
+called for languages which have not defined their own specific
+org-babel-expand-body:lang function."
+  (let ((pro (cdr (assq :prologue params)))
+	(epi (cdr (assq :epilogue params)))
+        (graphics-file (and (member "graphics" (assq :result-params params))
+			    (org-babel-graphical-output-file params)))
+        (width (or (cdr (assq :width params)) 600))
+        (height (or (cdr (assq :height params)) 400)))
+    (mapconcat #'identity
+	       (append (when pro (list pro))
+		       var-lines
+		       (list body)
+                       (when graphics-file
+                         (list (format "plot!(size = (%s, %s))" width height)
+                               (format "savefig(\"%s\")" graphics-file)))
+		       (when epi (list epi)))
+	       "\n")))
+
 (defun org-babel-execute:julia-vterm (body params)
   "Execute a block of Julia code with Babel.
 This function is called by `org-babel-execute-src-block'.
@@ -123,13 +145,9 @@ BODY is the contents and PARAMS are header arguments of the code block."
   (let* ((session-name (cdr (assq :session params)))
 	 (session (pcase session-name ('nil "main") ("none" nil) (_ session-name)))
 	 (var-lines (org-babel-variable-assignments:julia-vterm params))
-	 (result-params (cdr (assq :result-params params))))
-    (with-current-buffer (julia-vterm-repl-buffer session)
-      (add-hook 'julia-vterm-repl-filter-functions #'ob-julia-vterm-output-filter))
-    (ob-julia-vterm-evaluate (current-buffer)
-			     session
-			     (org-babel-expand-body:generic body params var-lines)
-			     params)))
+	 (full-body (org-babel-expand-body:julia-vterm body params var-lines))
+	 (session (pcase session-name ('nil "main") ("none" nil) (_ session-name))))
+    (org-babel-julia-vterm-evaluate session full-body result-type params)))
 
 (defun org-babel-variable-assignments:julia-vterm (params)
   "Return list of Julia statements assigning variables based on variable-value pairs in PARAMS."
